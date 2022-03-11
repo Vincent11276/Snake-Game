@@ -1,6 +1,7 @@
 
+
 use sfml::{
-    graphics::*, system::*, window::*,
+    graphics::*, system::*, window::*, SfBox,
 };
 
 use rand::Rng;
@@ -83,6 +84,96 @@ impl Helpers {
             Direction::Right => Direction::Left,
             Direction::Left => Direction::Right,
         }
+    }
+
+    fn set_tex_coords_by_rect(rect: FloatRect, vertex_slice: &mut [Vertex]) {
+        vertex_slice[0].tex_coords = Vector2f::new(rect.left, rect.top);
+        vertex_slice[1].tex_coords = Vector2f::new(rect.left + rect.width, rect.top);
+        vertex_slice[2].tex_coords = Vector2f::new(rect.left + rect.width, rect.top + rect.height);
+        vertex_slice[3].tex_coords = Vector2f::new(rect.left, rect.top + rect.height);
+    }
+
+    
+}
+
+struct TileMap { 
+    tile_size : Vector2f,
+    d_world_vertices: Vec<Vertex>,
+    world_data : Vec<Vec<i32>>,
+    tilemap_tex: SfBox<Texture>,
+}
+
+impl<'s> TileMap {
+    fn new(world_size: Vector2i, tile_size: Vector2f) -> Self {
+        TileMap {
+            tile_size,
+            d_world_vertices: vec![],
+            world_data: vec![vec![world_size.x as i32]; world_size.y as usize],
+            tilemap_tex: Texture::new(0, 0).unwrap(),
+        }
+    }
+
+    fn load_from_file(&mut self, path: &str) {
+        let tilemap_tex = Texture::from_file(path);
+    }
+
+    fn tile_number_to_coords(&mut self, tile_number: i32) -> Vector2i {
+        let world_size = self.get_world_size();
+        
+        Vector2i::new(tile_number / world_size.x, tile_number / world_size.x - 1)
+    }
+
+    fn coords_to_tile_number(&mut self, coords: Vector2i) -> i32 {
+        let world_size = self.get_world_size();
+
+        return world_size.x * coords.y + coords.x;
+    }
+
+    fn get_texture_rect_by_coords(&mut self, coords: Vector2i) -> FloatRect {
+        FloatRect::new(coords.x as f32, coords.y as f32, self.tile_size.x, self.tile_size.x)
+    }
+    fn get_world_size(&mut self) -> Vector2i {
+        Vector2i::new(self.world_data[0].len() as i32, self.world_data.len() as i32)
+    }
+
+    fn resize_world(&mut self, width: i32, height: i32) {
+        self.world_data.resize(height as usize, vec![-1, width.into()]);
+    }
+
+    fn try_set_block(&mut self, x: i32, y: i32, value: i32) {
+        if self.is_inbounds(x, y) {       
+            let starting_index = self.coords_to_tile_number((x, y).into()) * 4;
+            
+            let mut quad = &mut self.d_world_vertices[starting_index as usize..starting_index as usize + 4];
+
+            //let rect = self.get_texture_rect_by_coords(Vector2i::new(x, y));
+            let rect = FloatRect::new(x as f32, y as f32, self.tile_size.x, self.tile_size.x);
+
+            quad[0].tex_coords = Vector2f::new(rect.left, rect.top);
+            quad[1].tex_coords = Vector2f::new(rect.left + rect.width, rect.top);
+            quad[2].tex_coords = Vector2f::new(rect.left + rect.width, rect.top + rect.height);
+            quad[3].tex_coords = Vector2f::new(rect.left, rect.top + rect.height);
+
+            self.world_data[y as usize][x as usize] = value;
+        }
+    }
+
+    fn is_inbounds(&mut self, x: i32, y: i32) -> bool {
+        let world_size = self.get_world_size();
+
+        x >= 0 && y >= 0 && x < world_size.x as i32 && y < world_size.y
+    }
+}
+
+impl<'s> Drawable for TileMap {
+    fn draw<'a: 'shader, 'texture, 'shader, 'shader_texture>(
+        &'a self,
+        render_target: &mut dyn RenderTarget,
+        states: &RenderStates<'texture, 'shader, 'shader_texture>,
+    ) {
+        states.set_texture(Some(&*self.tilemap_tex));
+
+        render_target.draw_primitives(&self.d_world_vertices, PrimitiveType::QUADS, &states);   
     }
 }
 
@@ -407,7 +498,14 @@ fn main() {
     );
     window.set_framerate_limit(60);
 
+    let mut tilemap = TileMap::new(Vector2i::new(10, 15), Vector2f::new(32.0, 32.0));
+    tilemap.load_from_file("C:\\Users\\VitalityEdge42\\Documents\\GitHub\\Snake-Game\\src\\snake-graphics.png");
+
+    tilemap.try_set_block(2, 4, 2);
+
+    
     let mut snake_game = SnakeGame::new(32, 32);
+
 
     let mut clock = Clock::start();
 
